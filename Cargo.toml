@@ -1,0 +1,15 @@
+[package]
+name = "todo"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+rhun-ext = { path = "../extension-protocol/rust/rhun-ext" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"
