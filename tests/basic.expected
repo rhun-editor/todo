@@ -1,0 +1,19 @@
+rhun-editor/todo state=idle pid=0 cmds=todo.rescan confined=0
+ext=todo state=running
+at=X,Y size=WxH scroll=0 rowh=28
+row 0 d=0 open id=f:notes.sh label=notes.sh badge=2 icon=119
+row 1 d=1 leaf id=t:notes.sh:2 label=HACK around it desc=:2 icon=153 hl=0-4
+row 2 d=1 leaf id=t:notes.sh:3 label=XXX nothing yet desc=:3 icon=154 hl=0-3
+row 3 d=0 open id=f:src/main.rs label=main.rs desc=src badge=2 icon=116
+row 4 d=1 leaf id=t:src/main.rs:2 label=TODO: say hello desc=:2 icon=153 hl=0-4
+row 5 d=1 leaf id=t:src/main.rs:3 label=FIXME overflow desc=:3 icon=154 hl=0-5
+tabs=1 active=main.rs line=3 col=19 sel=0 dirty=0 lang=Rust focus=0 theme=rhun-dark
+at=X,Y size=WxH scroll=0 rowh=28
+row 0 d=0 open id=f:notes.sh label=notes.sh badge=2 icon=119
+row 1 d=1 leaf id=t:notes.sh:2 label=HACK around it desc=:2 icon=153 hl=0-4
+row 2 d=1 leaf id=t:notes.sh:3 label=XXX nothing yet desc=:3 icon=154 hl=0-3
+row 3 d=0 open id=f:src/main.rs label=main.rs desc=src badge=3 icon=116
+row 4 d=1 leaf id=t:src/main.rs:2 label=TODO: say hello desc=:2 icon=153 hl=0-4
+row 5 d=1 leaf cur id=t:src/main.rs:3 label=FIXME overflow desc=:3 icon=154 hl=0-5
+row 6 d=1 leaf id=t:src/main.rs:5 label=TODO and another desc=:5 icon=153 hl=0-4
+rhun-editor/todo state=running pid=PID cmds=todo.rescan confined=1

@@ -1,0 +1,22 @@
+# Run with: rhun PROJECT --headless 1000x600 --scale 1 --extensions DIR --script tests/basic.txt
+# where DIR/rhun-editor/todo holds extension.ini and bin/ (tests/run.sh sets that up, with a
+# project of two files holding TODO, FIXME, XXX and HACK comments).
+# Every print-* line's output is compared by tests/run.sh with tests/basic.expected.
+wait 100
+print-extensions
+view-show todo
+wait-ext todo running
+wait 800
+# the comments by file, each with its line
+print-view todo
+# a click on FIXME's row (tests/run.sh puts its place here) opens src/main.rs at its line
+click ROW
+wait 300
+print-state
+# a new comment, saved: the tree scans again
+key ctrl+End
+type // TODO and another
+key ctrl+s
+wait 1000
+print-view todo
+print-extensions
