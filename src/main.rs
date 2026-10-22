@@ -6,7 +6,7 @@
 use rhun_ext::views::{Icon, Kids, Node, Patch, RetainedEvent, State, ViewColor, ViewOpen, Where};
 use rhun_ext::{run, Event, Ext, Feature, Handler, View};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 const WORDS: [&str; 4] = ["TODO", "FIXME", "XXX", "HACK"];
@@ -80,6 +80,13 @@ fn rel_path(path: &str) -> String {
         p = rest.to_string();
     }
     p
+}
+
+/// A hit's file as rhun writes paths: the project's root as rhun gave it, `/`, the relative path
+/// (C:/p/src/a.rs on Windows too, where Path::join would give C:/p\src\a.rs and rhun would not
+/// match it to the open document).
+fn abs_path(root: &str, rel: &str) -> String {
+    format!("{}/{rel}", root.trim_end_matches('/'))
 }
 
 /// ripgrep's `path NUL line:text` lines as hits (None when rg cannot run).
@@ -218,12 +225,7 @@ pub fn tree(root: &str, mut hits: Vec<Hit>) -> Patch {
     }
     p.kids(b"", &top, false);
     for (path, list) in &files {
-        // the platform's separators throughout: C:\p\src\a.rs on Windows, not C:\p\src/a.rs
-        let abs = path
-            .split('/')
-            .fold(PathBuf::from(root), |p, s| p.join(s))
-            .to_string_lossy()
-            .into_owned();
+        let abs = abs_path(root, path);
         let items: Vec<Node> = list
             .iter()
             .map(|h| {
@@ -349,10 +351,16 @@ mod tests {
         let body = String::from_utf8(tree("/p", hits).encode().unwrap()).unwrap();
         assert!(body.contains("f:src/lib.rs"), "{body}");
         assert!(body.contains("t:src/main.rs:2"), "{body}");
-        let abs = Path::new("/p").join("src").join("main.rs");
-        let open = format!("open 2 8 14\n{}", abs.display());
-        assert!(body.contains(&open), "{body}");
+        assert!(body.contains("open 2 8 14\n/p/src/main.rs"), "{body}");
         assert!(body.contains("state ready"), "{body}");
+    }
+
+    #[test]
+    fn paths_as_rhun_writes_them() {
+        assert_eq!(abs_path("C:/p", "src/a.rs"), "C:/p/src/a.rs");
+        assert_eq!(abs_path("C:/", "a.rs"), "C:/a.rs");
+        assert_eq!(abs_path("/", "a.rs"), "/a.rs");
+        assert_eq!(rel_path(".\\src\\deep\\b.py"), "src/deep/b.py");
     }
 
     #[test]
