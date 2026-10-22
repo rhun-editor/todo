@@ -6,7 +6,7 @@
 use rhun_ext::views::{Icon, Kids, Node, Patch, RetainedEvent, State, ViewColor, ViewOpen, Where};
 use rhun_ext::{run, Event, Ext, Feature, Handler, View};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const WORDS: [&str; 4] = ["TODO", "FIXME", "XXX", "HACK"];
@@ -65,7 +65,7 @@ fn hit(path: &str, line: u32, text: &str) -> Option<Hit> {
         t = word.to_string();
     }
     Some(Hit {
-        path: path.trim_start_matches("./").replace('\\', "/"),
+        path: rel_path(path),
         line,
         col: text[..at].chars().count() as u32 + 1,
         word,
@@ -73,11 +73,22 @@ fn hit(path: &str, line: u32, text: &str) -> Option<Hit> {
     })
 }
 
-/// ripgrep's `path:line:col:text` lines as hits (None when rg cannot run).
+/// A path as rg or the walker gives it (`./src/a.rs`, `.\src\a.rs` on Windows) relative, with /.
+fn rel_path(path: &str) -> String {
+    let mut p = path.replace('\\', "/");
+    while let Some(rest) = p.strip_prefix("./") {
+        p = rest.to_string();
+    }
+    p
+}
+
+/// ripgrep's `path NUL line:text` lines as hits (None when rg cannot run).
 fn scan_rg(root: &str) -> Option<Vec<Hit>> {
     let out = Command::new("rg")
         .args([
             "--no-heading",
+            "--with-filename",
+            "--null",
             "--line-number",
             "--color",
             "never",
@@ -96,12 +107,15 @@ fn scan_rg(root: &str) -> Option<Vec<Hit>> {
     Some(parse_rg(&text))
 }
 
-/// `path:line:text` lines (ripgrep with --no-heading --line-number) as hits.
+/// `path NUL line:text` lines (ripgrep with --no-heading --null --line-number) as hits. The NUL
+/// ends the path, so a drive (`C:\`) or a colon in a file's name cannot split it.
 pub fn parse_rg(text: &str) -> Vec<Hit> {
     let mut hits = Vec::new();
     for l in text.lines() {
-        let mut it = l.splitn(3, ':');
-        let (Some(path), Some(line), Some(rest)) = (it.next(), it.next(), it.next()) else {
+        let Some((path, after)) = l.split_once('\0') else {
+            continue;
+        };
+        let Some((line, rest)) = after.split_once(':') else {
             continue;
         };
         let Ok(line) = line.parse::<u32>() else {
@@ -204,7 +218,12 @@ pub fn tree(root: &str, mut hits: Vec<Hit>) -> Patch {
     }
     p.kids(b"", &top, false);
     for (path, list) in &files {
-        let abs = Path::new(root).join(path).to_string_lossy().into_owned();
+        // the platform's separators throughout: C:\p\src\a.rs on Windows, not C:\p\src/a.rs
+        let abs = path
+            .split('/')
+            .fold(PathBuf::from(root), |p, s| p.join(s))
+            .to_string_lossy()
+            .into_owned();
         let items: Vec<Node> = list
             .iter()
             .map(|h| {
@@ -320,16 +339,19 @@ mod tests {
     #[test]
     fn rg_lines_and_the_tree() {
         let hits = parse_rg(
-            "./src/main.rs:2:    // TODO: parse\nsrc/lib.rs:1:// FIXME lib\nREADME.md:9:no words\n",
+            "./src/main.rs\x002:    // TODO: parse\n.\\src\\lib.rs\x001:// FIXME lib\nREADME.md\x009:no words\n",
         );
         assert_eq!(hits.len(), 2);
+        assert_eq!(hits[1].path, "src/lib.rs");
         assert_eq!(hits[0].path, "src/main.rs");
         assert_eq!((hits[0].line, hits[0].col), (2, 8));
         assert_eq!(hits[0].text, "TODO: parse");
         let body = String::from_utf8(tree("/p", hits).encode().unwrap()).unwrap();
         assert!(body.contains("f:src/lib.rs"), "{body}");
         assert!(body.contains("t:src/main.rs:2"), "{body}");
-        assert!(body.contains("open 2 8 14\n/p/src/main.rs"), "{body}");
+        let abs = Path::new("/p").join("src").join("main.rs");
+        let open = format!("open 2 8 14\n{}", abs.display());
+        assert!(body.contains(&open), "{body}");
         assert!(body.contains("state ready"), "{body}");
     }
 
@@ -348,5 +370,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert_eq!((hits[0].path.as_str(), hits[0].line), ("src/a.rs", 2));
+    }
+
+    #[test]
+    fn rg_finds_what_the_walker_finds() {
+        let dir = std::env::temp_dir().join(format!("todo-rg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src/deep")).unwrap();
+        std::fs::write(dir.join("src/a.rs"), "fn a() {}\n// TODO one\n").unwrap();
+        std::fs::write(
+            dir.join("src/deep/b.py"),
+            "# FIXME two\nx = 1  # HACK three\n",
+        )
+        .unwrap();
+        // rg is optional: without it there is nothing to compare
+        let rg = scan_rg(dir.to_str().unwrap());
+        let walk = scan_walk(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        let Some(mut rg) = rg else { return };
+        rg.sort_by(|a, b| a.path.cmp(&b.path).then(a.line.cmp(&b.line)));
+        assert_eq!(rg.len(), 3, "{rg:?}");
+        assert_eq!(rg[0].path, "src/a.rs");
+        assert_eq!((rg[1].path.as_str(), rg[1].col), ("src/deep/b.py", 3));
+        let mut walk = walk;
+        walk.sort_by(|a, b| a.path.cmp(&b.path).then(a.line.cmp(&b.line)));
+        assert_eq!(rg, walk);
     }
 }
