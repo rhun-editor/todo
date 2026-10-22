@@ -14,7 +14,16 @@ const WORDS: [&str; 4] = ["TODO", "FIXME", "XXX", "HACK"];
 const MAX_ITEMS: usize = 20_000;
 const MAX_PER_FILE: usize = 1000;
 const MAX_FILE: u64 = 1 << 20;
-const SKIP_DIRS: [&str; 8] = ["node_modules", "target", "build", "dist", "out", "vendor", "__pycache__", "venv"];
+const SKIP_DIRS: [&str; 8] = [
+    "node_modules",
+    "target",
+    "build",
+    "dist",
+    "out",
+    "vendor",
+    "__pycache__",
+    "venv",
+];
 
 /// One comment: the file (relative, with /), its line and column (from 1), the text from the word.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,7 +76,14 @@ fn hit(path: &str, line: u32, text: &str) -> Option<Hit> {
 /// ripgrep's `path:line:col:text` lines as hits (None when rg cannot run).
 fn scan_rg(root: &str) -> Option<Vec<Hit>> {
     let out = Command::new("rg")
-        .args(["--no-heading", "--line-number", "--color", "never", "--no-messages", "-e"])
+        .args([
+            "--no-heading",
+            "--line-number",
+            "--color",
+            "never",
+            "--no-messages",
+            "-e",
+        ])
         .arg(r"\b(TODO|FIXME|XXX|HACK)\b")
         .arg(".")
         .current_dir(root)
@@ -85,8 +101,12 @@ pub fn parse_rg(text: &str) -> Vec<Hit> {
     let mut hits = Vec::new();
     for l in text.lines() {
         let mut it = l.splitn(3, ':');
-        let (Some(path), Some(line), Some(rest)) = (it.next(), it.next(), it.next()) else { continue };
-        let Ok(line) = line.parse::<u32>() else { continue };
+        let (Some(path), Some(line), Some(rest)) = (it.next(), it.next(), it.next()) else {
+            continue;
+        };
+        let Ok(line) = line.parse::<u32>() else {
+            continue;
+        };
         if let Some(h) = hit(path, line, rest) {
             hits.push(h);
         }
@@ -103,7 +123,9 @@ pub fn scan_walk(root: &Path) -> Vec<Hit> {
     let mut hits = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         let mut entries: Vec<_> = rd.flatten().collect();
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
@@ -119,12 +141,18 @@ pub fn scan_walk(root: &Path) -> Vec<Hit> {
             if !ft.is_file() || e.metadata().map(|m| m.len() > MAX_FILE).unwrap_or(true) {
                 continue;
             }
-            let Ok(bytes) = std::fs::read(&p) else { continue };
+            let Ok(bytes) = std::fs::read(&p) else {
+                continue;
+            };
             if bytes[..bytes.len().min(8000)].contains(&0) {
                 continue;
             }
             let text = String::from_utf8_lossy(&bytes);
-            let rel = p.strip_prefix(root).unwrap_or(&p).to_string_lossy().replace('\\', "/");
+            let rel = p
+                .strip_prefix(root)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .replace('\\', "/");
             for (i, l) in text.lines().enumerate() {
                 if let Some(h) = hit(&rel, i as u32 + 1, l) {
                     hits.push(h);
@@ -194,7 +222,10 @@ pub fn tree(root: &str, mut hits: Vec<Hit>) -> Patch {
         p.kids(format!("f:{path}").as_bytes(), &items, false);
     }
     if total == 0 {
-        p.state(State::Empty("No TODO, FIXME, XXX or HACK comments in this project".into(), vec!["rescan".into()]));
+        p.state(State::Empty(
+            "No TODO, FIXME, XXX or HACK comments in this project".into(),
+            vec!["rescan".into()],
+        ));
     } else {
         p.state(State::Ready);
     }
@@ -209,7 +240,9 @@ struct Todo {
 
 impl Todo {
     fn scan(&mut self, ext: &Ext) {
-        let (Some(root), Some(view)) = (self.root.clone(), self.view) else { return };
+        let (Some(root), Some(view)) = (self.root.clone(), self.view) else {
+            return;
+        };
         let mut busy = Patch::new();
         busy.busy(true);
         let _ = ext.patch(view, &busy);
@@ -232,7 +265,10 @@ impl Handler for Todo {
             self.view = Some(open.view);
             if self.root.is_none() {
                 let mut p = Patch::new();
-                p.state(State::Empty("Open a folder to see its TODO comments".into(), vec![]));
+                p.state(State::Empty(
+                    "Open a folder to see its TODO comments".into(),
+                    vec![],
+                ));
                 let _ = ext.patch(open.view, &p);
                 return;
             }
@@ -273,14 +309,19 @@ mod tests {
     #[test]
     fn words_are_whole_words() {
         assert_eq!(find_word("// TODO: parse"), Some((3, "TODO")));
-        assert_eq!(find_word("let todos = TODOS; // FIXME here"), Some((22, "FIXME")));
+        assert_eq!(
+            find_word("let todos = TODOS; // FIXME here"),
+            Some((22, "FIXME"))
+        );
         assert_eq!(find_word("XXXL HACKER"), None);
         assert_eq!(find_word("# HACK and TODO"), Some((2, "HACK")));
     }
 
     #[test]
     fn rg_lines_and_the_tree() {
-        let hits = parse_rg("./src/main.rs:2:    // TODO: parse\nsrc/lib.rs:1:// FIXME lib\nREADME.md:9:no words\n");
+        let hits = parse_rg(
+            "./src/main.rs:2:    // TODO: parse\nsrc/lib.rs:1:// FIXME lib\nREADME.md:9:no words\n",
+        );
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].path, "src/main.rs");
         assert_eq!((hits[0].line, hits[0].col), (2, 8));
